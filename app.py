@@ -36,6 +36,17 @@ def get_db_connection():
         print(f"Error connecting to database: {e}")
         raise
 
+# --- NEW: A WELCOME ROUTE FOR THE ROOT URL ---
+@app.route('/')
+def index():
+    return jsonify({
+        "message": "Welcome to the Inventory Service API!",
+        "endpoints": {
+            "get_all_products": "GET /products",
+            "add_new_product": "POST /products"
+        }
+    })
+
 @app.route('/products', methods=['GET'])
 def get_products():
     conn = get_db_connection()
