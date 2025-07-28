@@ -1,21 +1,16 @@
 from flask import Flask, jsonify, request
 import mysql.connector
-import os # Imports should be at the top of the file
+import os
 
 app = Flask(__name__)
 
-# --- CORRECT DATABASE CONNECTION FOR RENDER ---
-# This function reads the secure database URL provided by Render
-# and establishes a connection.
+# This is the same database connection function from the inventory service.
+# It reads the database URL from the environment variables.
 def get_db_connection():
-    # The DATABASE_URL is automatically set by Render in your environment
     database_url = os.environ.get('DATABASE_URL')
-    
     if not database_url:
         raise Exception("DATABASE_URL environment variable not set")
 
-    # The URL format is mysql://user:password@host:port/database
-    # We need to parse it for the mysql.connector library
     try:
         url_parts = database_url.replace('mysql://', '').split('@')
         user_pass, host_db = url_parts[0], url_parts[1]
@@ -32,50 +27,57 @@ def get_db_connection():
         )
         return conn
     except Exception as e:
-        # This will print a more helpful error to the Render logs if connection fails
         print(f"Error connecting to database: {e}")
         raise
 
-# --- NEW: A WELCOME ROUTE FOR THE ROOT URL ---
+# A welcome route for the root URL
 @app.route('/')
 def index():
     return jsonify({
-        "message": "Welcome to the Inventory Service API!",
+        "message": "Welcome to the Order Service API!",
         "endpoints": {
-            "get_all_products": "GET /products",
-            "add_new_product": "POST /products"
+            "get_all_orders": "GET /orders",
+            "create_new_order": "POST /orders"
         }
     })
 
-@app.route('/products', methods=['GET'])
-def get_products():
+# Endpoint to get all orders
+@app.route('/orders', methods=['GET'])
+def get_orders():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM products")
-    products = cursor.fetchall()
+    cursor.execute("SELECT * FROM orders")
+    orders = cursor.fetchall()
     cursor.close()
     conn.close()
-    return jsonify(products)
+    return jsonify(orders)
 
-@app.route('/products', methods=['POST'])
-def add_product():
+# Endpoint to create a new order
+@app.route('/orders', methods=['POST'])
+def create_order():
     data = request.get_json()
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO products (name, stock, price) VALUES (%s, %s, %s)",
-        (data['name'], data['stock'], data['price'])
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return jsonify({'message': 'Product added'}), 201
+    # Basic validation to ensure required data is present
+    if not data or 'product_id' not in data or 'quantity' not in data or 'price' not in data:
+        return jsonify({'error': 'Missing data: product_id, quantity, and price are required'}), 400
 
-# --- CORRECT INDENTATION ---
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO orders (product_id, quantity, price) VALUES (%s, %s, %s)",
+            (data['product_id'], data['quantity'], data['price'])
+        )
+        conn.commit()
+        # Get the ID of the new order to return it
+        new_order_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        return jsonify({'message': 'Order created successfully', 'order_id': new_order_id}), 201
+    except mysql.connector.Error as err:
+        # This will catch errors, like if the product_id doesn't exist
+        return jsonify({'error': f'Database error: {err}'}), 500
+
+
 if __name__ == '__main__':
-    # The port is automatically handled by Render's web service environment
-    # We don't need to specify it here when using the 'flask run' command
-    # The Dockerfile's CMD ["flask", "run"] will handle this.
-    # For local testing, you might still want to define a port.
-    port = int(os.environ.get("PORT", 5002))
+    port = int(os.environ.get("PORT", 5003)) # Use a different port for local testing
     app.run(host="0.0.0.0", port=port)
